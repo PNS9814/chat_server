@@ -1,0 +1,7 @@
+{
+  "title": "💬 Simple Chat",
+  "placeholder_msg": "Type a message...",
+  "send_button": "Send",
+  "you_joined": "🟢 You joined: {user}",
+  "user_joined": "🔔 {user} joined the room."
+}
