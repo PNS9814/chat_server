@@ -66,3 +66,10 @@ npm run dev
 
 ## サーバの停止
 - ターミナルで Ctrl + C
+
+
+## Gemini AI インストール
+
+```bash
+npm i @google/genai
+```
