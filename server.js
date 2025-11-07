@@ -1,62 +1,77 @@
-// TODO: import dotenv from "dotenv"
-import dotenv from 'dotenv';
-
-// TODO: dotenv.config() を実行
+// WebSocket
+import { Server } from "socket.io";
+import dotenv from "dotenv";
 dotenv.config();
 
-// ✅ Gemini API クライアントをインポート
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+
 import { GoogleGenAI } from "@google/genai";
 
-// TODO: socket.ioをインポートし、Serverを取得
-import { Server } from 'socket.io';
-
-// TODO: ExpressとCORSをインポート
-import express from 'express';
-import cors from 'cors';
-
-// TODO: HOSTとPORTを.envから取得、なければデフォルト値を設定
 const HOST = process.env.HOST || "localhost";
 const PORT = process.env.PORT || 3000;
 
-// ✅ .env の GEMINI_API_KEY を使って初期化
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-// 使用するGeminiモデル名
-const modelName = "gemini-2.0-flash";
-
-console.log(HOST, PORT);
+let voiceId = "";
 
 // ==============================
 // 🔥 Express for REST API
 // ==============================
-// TODO: express() を実行して app を作成
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Optional REST endpoint for manual translation testing
-app.post('/translate', async (req, res) => {
-    const { text, fromLang, toLang } = req.body || {};
-    if (!text) return res.status(400).json({ error: 'text required' });
-    const translated = await translateText(text, fromLang, toLang);
-    console.log("translated: ", translated);
-    res.json({ original: text, text: translated, fromLang, toLang });
+// ==============================
+// ✅ Gemini 設定
+// ==============================
+const modelName = "gemini-2.0-flash";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// ==============================
+// 翻訳API: /translate
+// ==============================
+app.post("/api/translate", async (req, res) => {
+    const { text, fromLang, toLang } = req.body;
+
+    if (!text || !fromLang || !toLang) {
+        return res.status(400).json({
+            error: "text, fromLang, and toLang are required.",
+        });
+    }
+    try {
+        const translatedText = await aiTranslate(text, fromLang, toLang);
+        console.log("🌐 Translated:", translatedText);
+        res.json({ text, translatedText, fromLang, toLang });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "translated error" });
+    }
 });
 
-// TODO: app.listen() でHTTPサーバーを起動し、httpServerに代入
-const httpServer = app.listen(PORT, HOST, () => {
+
+// ------------------------------
+// HTTPサーバーを起動
+// ------------------------------
+const httpServer = app.listen(PORT, () => {
     console.log(`✅ Translate API ready : http://${HOST}:${PORT}`);
 });
 
-// TODO: CORS設定付きでSocket.IOサーバーを初期化: origin: "*"
+// ==============================
+// Socket.IO (HTTPサーバーに乗せる)
+// ==============================
 const io = new Server(httpServer, {
     cors: { origin: "*" },
 });
 
-// WebSocket接続時の処理
+// ==============================
+// WebSocket本体
+// ==============================
 io.on("connection", (socket) => {
     console.log("🟢 New connection:", socket.id);
 
-    // join_roomイベント受信時の処理
     socket.on("join_room", ({ roomId, userName }) => {
         console.log(`➡️ ${userName} joining room:`, roomId);
         socket.join(roomId);
@@ -64,59 +79,34 @@ io.on("connection", (socket) => {
 
         // 参加メッセージをルームに通知
         socket.to(roomId).emit("join_message", {
-            from: "system",
-            text: `${socket.name} joined the room.`,
+            sender: "system",
+            text: `${userName} joined the room.`,
         });
     });
 
-    // send_messageイベント受信時の処理
-    socket.on("send_message", (data) => {
-        const { text, roomId } = data;
-        console.log(`💬 Message:`, roomId, text);
-        // TODO: socket.to(roomId).emit("chat_message") : data
-        socket.to(roomId).emit("chat_message", data);
-    });
-
-    // translateイベント受信時の処理
-    // クライアントから翻訳を依頼されたら簡易翻訳を実行してルームに返す
-    socket.on("translate", async (data) => {
-        try {
-            const { text, roomId, fromLang, toLang, userName } = data;
-            console.log(`🔁 Translate request:`, roomId, fromLang, '->', toLang, text);
-
-            // simple mock translation function - replace with real API if available
-            const translated = await translateText(text, fromLang, toLang);
-
-            // emit translated result to the whole room (including sender)
-            io.to(roomId).emit("translate", {
-                from: userName || socket.name || 'unknown',
-                original: text,
-                text: translated,
-                fromLang,
-                toLang,
-            });
-        } catch (err) {
-            console.error('translate handler error', err);
-            socket.emit('error_message', 'Translation failed');
+    socket.on("send_message", ({ text, roomId, sender, lang }) => {
+        if (!roomId) {
+            socket.emit("error_message", "⚠️ Room is not connected.");
+            return;
         }
+        console.log(`💬 Message from ${sender}:`, text);
+        socket.to(roomId).emit("chat_message", { sender, text, lang });
     });
 
-    // WebSocket切断時の処理
     socket.on("disconnect", () => {
-        console.log(`🔴 Disconnected: ${socket.id}`);
+        console.log(`🔴 Disconnected: ${socket.name ?? socket.id}`);
     });
 });
 
+export async function aiTranslate(text, fromLang, toLang) {
+    if (!text || typeof text !== "string") {
+        return null;
+    }
 
-/**
- * Geminiを使って翻訳する関数
- * @param {string} text 翻訳したいテキスト
- * @param {string} fromLang 翻訳元言語コード（例: "ja"）
- * @param {string} toLang 翻訳先言語コード（例: "en"）
- * @returns {Promise<string>} 翻訳結果テキスト
- */
-export async function translateText(text, fromLang = "auto", toLang = "en") {
-    if (!text) return "";
+    // 最大文字数制限（サーバー負荷保護）
+    if (text.length > 100) {
+        return null;
+    }
 
     try {
         const prompt = `
@@ -133,10 +123,8 @@ export async function translateText(text, fromLang = "auto", toLang = "en") {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 
-
         const result =
             response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        console.log(result)
         if (!result) throw "Empty result";
         return result;
 
@@ -146,27 +134,60 @@ export async function translateText(text, fromLang = "auto", toLang = "en") {
     }
 }
 
-// Simple translate function (mock)
-// Replace this with real translation API integration (e.g., Google/Libre/Azure) when available.
-// function translateText(text, fromLang = 'auto', toLang = 'en') {
-//     if (!text) return '';
+// ==============================
+// ElevenLabs TTS API
+// ==============================
+app.post("/api/tts", async (req, res) => {
+    const { text, lang, voiceId } = req.body;
+    if (!text || !lang || !voiceId) {
+        return res.status(400).json({
+            error: "text, lang, and voiceId are required.",
+        });
+    }
 
-//     // Small rule-based examples for demonstration
-//     // If translating Japanese to English, map a couple of common phrases
-//     if (fromLang === 'ja' && toLang === 'en') {
-//         // common phrase mapping
-//         const map = {
-//             'こんにちは': 'Hello',
-//             'さようなら': 'Goodbye',
-//             '参加しました': 'joined the room',
-//         };
-//         let out = text;
-//         Object.keys(map).forEach(k => {
-//             out = out.split(k).join(map[k]);
-//         });
-//         return out + ` (en)`;
-//     }
+    // ハッシュ生成（text+lang）
+    const hash = crypto.createHash("md5").update(text + lang).digest("hex");
+    const filePath = path.join("tts-cache", `${hash}.mp3`);
 
-//     // default: return a simple marked translation so clients can see it's "translated"
-//     return `[${toLang}] ${text}`;
-// }
+    // ✅ もしファイルが存在したらキャッシュ返却
+    if (fs.existsSync(filePath)) {
+        console.log("🟠 Cache hit:", filePath);
+
+        const data = fs.readFileSync(filePath);
+        res.setHeader("Content-Type", "audio/mpeg");
+        return res.send(data);
+    }
+
+    console.log("🟢 Cache miss → ElevenLabs API");
+
+    // ===========================
+    //  ElevenLabs API 呼び出し
+    // ===========================
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "xi-api-key": process.env.ELEVEN_API_KEY,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            text,
+            model_id: "eleven_multilingual_v2",
+            voice_settings: {
+                stability: 0.3,
+                similarity_boost: 0.8
+            }
+        })
+    });
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // ✅ サーバーに保存（キャッシュ登録）
+    fs.writeFileSync(filePath, buffer);
+
+    // レスポンス返却
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.send(buffer);
+});

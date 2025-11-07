@@ -20,8 +20,8 @@ const userName = "User" + Math.floor(Math.random() * 1000);
 socket.on("connect", () => {
     console.log("🟢 Connected:", socket.id);
     socket.name = userName;
-    socket.emit("join_room", {roomId, userName});
-    append(t('you_joined', {user: userName}));
+    socket.emit("join_room", { roomId, userName });
+    append(t('you_joined', { user: userName }));
 });
 
 // JOINメッセージ受信
@@ -37,26 +37,64 @@ socket.on("join_message", (data) => {
 
 // メッセージ受信
 // chat_message 受信
+// chat_message 受信
 socket.on("chat_message", async (data) => {
     const text = data.text;
-    const sender = data.userName || "Unknown";
+    const sender = data.sender;
+    const fromLang = data.lang;
 
-    console.log(data);
-    // 画面に表示
+    // 表示
     append(`🔵 ${sender}: ${text}`);
 
-    // 受信したメッセージを翻訳サーバに送る場合
+    // ✅ 自分のメッセージは翻訳しない
+    if (sender === userName) return;
+
+    const toLang = document.getElementById("langSelect").value;
+    if (fromLang === toLang) {
+        // 同じ言語なら翻訳不要
+        return;
+    }
+
+    append(`🔵 Translating...`);
+    // 受信したメッセージを翻訳依頼
     const translateData = {
         text,
-        roomId: data.roomId,
-        fromLang: "ja", // 元の言語
-        toLang: "en",   // 翻訳先言語
-        userName: sender
+        fromLang: fromLang, // 元の言語
+        toLang: toLang,   // 翻訳先言語
     };
 
-    console.log(translateData);
+    console.log("これを翻訳します", translateData);
+    
+
     // サーバーに翻訳依頼
-    socket.emit("translate", translateData);
+    try {
+        // Express APIへHTTP POST
+        const res = await fetch(`${HOST}/api/translate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text,
+                fromLang: translateData.fromLang,
+                toLang: translateData.toLang,
+            }),
+        });
+
+        const result = await res.json();
+
+        if (result.translatedText) {
+            append(`🌍 ${sender}: ${result.translatedText}`);
+        } else {
+            append(`⚠️ 翻訳に失敗しました`);
+        }
+    } catch (err) {
+        console.error("Translation API error:", err);
+        append("⚠️ Translation failed (network error)");
+    }
+});
+
+socket.on("translate", (data) => {
+    console.log(data)
+    append(`🌍  ${data.text}`);
 });
 
 
@@ -70,8 +108,10 @@ form.addEventListener("submit", (e) => {
     // 自分のチャットログに表示
     append(`🟢 ${text}`);
 
-    // サーバーに送信: socket.emit("send_message") : text, roomId, myLang
-    socket.emit("send_message", { text, roomId, userName });
+    const lang = document.getElementById("langSelect").value;
+    // サーバーに送信
+    // text, roomId, sender, lang
+    socket.emit("send_message", { text, roomId, sender: userName, lang });
 
     // 入力欄クリア
     input.value = "";
