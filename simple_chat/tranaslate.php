@@ -12,14 +12,24 @@ require_once __DIR__ . '/lib/lang.php';
 </head>
 
 <body class="bg-gray-100 h-screen flex flex-col items-center p-6">
-  <h1 class="text-2xl font-bold mb-4 text-blue-600">💬 簡単翻訳</h1>
+  <h1 class="text-2xl font-bold mb-4 text-blue-600">💬 簡単チャット</h1>
 
   <div class="w-full max-w-md mb-4 flex items-center justify-between">
-    <div class="text-sm text-gray-600" data-i18n="title">💬 簡単翻訳</div>
+    <div class="text-sm text-gray-600" data-i18n="title">💬 簡単チャット</div>
+    <div>
+      <label for="langSelect" class="sr-only">Language</label>
+      <select id="langSelect" class="border rounded px-2 py-1">
+        <?php foreach (Lang::langs as $code => $info): ?>
+          <option value="<?= htmlspecialchars($code) ?>">
+            <?= htmlspecialchars($info['label']) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
   </div>
 
   <div
-    id="message-box"
+    id="chatBox"
     class="w-full max-w-md flex-1 overflow-y-auto border rounded-lg bg-white shadow p-4 mb-4"></div>
 
   <form
@@ -37,12 +47,13 @@ require_once __DIR__ . '/lib/lang.php';
       id="sendBtn"
       class="bg-blue-500 text-white rounded-lg px-4 hover:bg-blue-600 transition"
       data-i18n="send_button">
-      翻訳
+      送信
     </button>
   </form>
 
   <script src="js/env.js" defer></script>
-  <script src="js/translate.js" defer></script>
+  <script src="js/i18n.js" defer></script>
+  <script src="js/app.js" defer></script>
 </body>
 
 </html>

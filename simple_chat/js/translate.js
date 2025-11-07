@@ -19,7 +19,7 @@ form.addEventListener("submit", async (e) => {
     append(`🟢 ${text}`);
 
     const fromLang = "ja"; // 元の言語
-    const toLang = "en";   // 翻訳先言語
+    const toLang = "si";   // 翻訳先言語
     const url = `${HOST}/translate`;
     const data = await fetch(url, {
         method: "POST",

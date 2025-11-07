@@ -18,11 +18,16 @@ require_once __DIR__ . '/lib/lang.php';
     <div class="text-sm text-gray-600" data-i18n="title">💬 簡単チャット</div>
     <div>
       <label for="langSelect" class="sr-only">Language</label>
+    <div>
+      <label for="langSelect" class="sr-only">Language</label>
       <select id="langSelect" class="border rounded px-2 py-1">
-        <option value="ja">日本語</option>
-        <option value="en">English</option>
-        <option value="si">සිංහල</option>
+        <?php foreach (Lang::langs as $code => $info): ?>
+          <option value="<?= htmlspecialchars($code) ?>">
+            <?= htmlspecialchars($info['label']) ?>
+          </option>
+        <?php endforeach; ?>
       </select>
+    </div>
     </div>
   </div>
 
