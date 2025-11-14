@@ -61,7 +61,6 @@ npm i @google/genai
 ターミナルを開いてコマンドを入力
 
 ```bash
-npm run dev
 ```
 
 ## サーバの停止

@@ -17,6 +17,22 @@ const PORT = process.env.PORT || 3000;
 
 let voiceId = "";
 
+const langs = {
+    'ja': { 'label': 'Japanese', 'voice': "bqpOyYNUu11tjjvRUbKn" },
+    'en': { 'label': 'English', 'voice': "21m00Tcm4TlvDq8ikWAM" },
+    'es': { 'label': 'Spanish', 'voice': "" },
+    'de': { 'label': 'German', 'voice': "" },
+    'fr': { 'label': 'French', 'voice': "kwhMCf63M8O3rCfnQ3oQ" },
+    'bn': { 'label': 'Bengali', 'voice': "WiaIVvI1gDL4vT4y7qUU" },
+    'zh': { 'label': 'Chinese', 'voice': "" },
+    'vi': { 'label': 'Vietnamese', 'voice': "" },
+    'si': { 'label': 'Sinhala', 'voice': "" },
+    'id': { 'label': 'Bahasa Indonesia', 'voice': "4h05pJAlcSqTMs5KRd8X" },
+    'ne': { 'label': 'Nepali', 'voice': "" },
+    'mn': { 'label': 'Mongolian', 'voice': "" },
+    'my': { 'label': 'Burmese', 'voice': "" },
+};
+
 // ==============================
 // 🔥 Express for REST API
 // ==============================
@@ -103,16 +119,24 @@ export async function aiTranslate(text, fromLang, toLang) {
         return null;
     }
 
+    console.log("Translate:", text, fromLang, "→", toLang);
+
     // 最大文字数制限（サーバー負荷保護）
     if (text.length > 100) {
         return null;
     }
+    const fromLangLabel = langs[fromLang]?.label || "";
+    const toLangLabel = langs[toLang]?.label || "";
+    if (!fromLangLabel || !toLangLabel) {
+        return
+    }
 
     try {
         const prompt = `
-            Translate the following text from ${fromLang} to ${toLang}.
-            Only output the translation.
+            Translate text from ${fromLangLabel} to ${toLangLabel}.
+            Only output the translated text.
             No explanations.
+            
             ${text}`;
 
         const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
@@ -180,7 +204,7 @@ app.post("/api/tts", async (req, res) => {
             }
         })
     });
-    
+
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 

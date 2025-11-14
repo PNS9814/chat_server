@@ -1,18 +1,24 @@
+// ================================
+// 環境チェック
+// ================================
 if (typeof HOST === "undefined" || HOST === "") {
     alert("HOSTをenv.jsで設定してください");
 }
 
+// ================================
 // DOM要素取得
+// ================================
 const form = document.getElementById("chatForm");
 const input = document.getElementById("msgInput");
 const chatBox = document.getElementById("chatBox");
 const langSelect = document.getElementById("langSelect");
 const sendBtn = document.getElementById("sendBtn");
+const micBtn = document.getElementById("micBtn");
 
-// TODO:サーバーに接続: HOST, transports: ["websocket"]
+// ================================
+// サーバー接続
+// ================================
 const socket = io(HOST, { transports: ["websocket"] });
-
-// 固定ルーム（簡易）
 const roomId = "room1";
 const userName = "User" + Math.floor(Math.random() * 1000);
 
@@ -21,146 +27,139 @@ socket.on("connect", () => {
     console.log("🟢 Connected:", socket.id);
     socket.name = userName;
     socket.emit("join_room", { roomId, userName });
-    append(t('you_joined', { user: userName }));
+    append(`${userName} が参加しました`);
 });
 
-// JOINメッセージ受信
-socket.on("join_message", (data) => {
-    console.log(data)
-    // If server sent a translation key, translate on client
-    if (data.key) {
-        append(t(data.key, data.params || {}));
-    } else if (data.text) {
-        append(data.text);
-    }
-});
-
+// ================================
 // メッセージ受信
-// chat_message 受信
-// chat_message 受信
+// ================================
 socket.on("chat_message", async (data) => {
-    const text = data.text;
-    const sender = data.sender;
-    const fromLang = data.lang;
-
-    // 表示
+    const { text, sender, lang: fromLang } = data;
     append(`🔵 ${sender}: ${text}`);
 
-    // ✅ 自分のメッセージは翻訳しない
-    if (sender === userName) return;
+    if (sender === userName) return; // 自分のメッセージは翻訳不要
 
-    const toLang = document.getElementById("langSelect").value;
-    if (fromLang === toLang) {
-        // 同じ言語なら翻訳不要
-        return;
-    }
+    const toLang = langSelect.value;
+    if (fromLang === toLang) return; // 同じ言語なら翻訳不要
 
-    append(`🔵 Translating...`);
-    // 受信したメッセージを翻訳依頼
-    const translateData = {
-        text,
-        fromLang: fromLang, // 元の言語
-        toLang: toLang,   // 翻訳先言語
-    };
+    append(`🔵 翻訳中...`);
 
-    console.log("これを翻訳します", translateData);
-    
-
-    // サーバーに翻訳依頼
     try {
-        // Express APIへHTTP POST
         const res = await fetch(`${HOST}/api/translate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                text,
-                fromLang: translateData.fromLang,
-                toLang: translateData.toLang,
-            }),
+            body: JSON.stringify({ text, fromLang, toLang }),
         });
-
         const result = await res.json();
-
         if (result.translatedText) {
             append(`🌍 ${sender}: ${result.translatedText}`);
         } else {
-            append(`⚠️ 翻訳に失敗しました`);
+            append("⚠️ 翻訳に失敗しました");
         }
     } catch (err) {
         console.error("Translation API error:", err);
-        append("⚠️ Translation failed (network error)");
+        append("⚠️ 翻訳に失敗しました（ネットワークエラー）");
     }
 });
 
-socket.on("translate", (data) => {
-    console.log(data)
-    append(`🌍  ${data.text}`);
-});
-
-
+// ================================
+// メッセージ送信
+// ================================
 form.addEventListener("submit", (e) => {
     e.preventDefault();
-    // 入力値取得
     const text = input.value.trim();
-    console.log(text);
     if (!text) return;
 
-    // 自分のチャットログに表示
     append(`🟢 ${text}`);
 
-    const lang = document.getElementById("langSelect").value;
-    // サーバーに送信
-    // text, roomId, sender, lang
+    const lang = langSelect.value;
     socket.emit("send_message", { text, roomId, sender: userName, lang });
-
-    // 入力欄クリア
     input.value = "";
 });
 
-// エラーメッセージ
-socket.on("error_message", (msg) => append(msg, "error"));
-
-// ==============================
+// ================================
 // 表示関数
-// ==============================
+// ================================
 function append(msg) {
     const div = document.createElement("div");
-    const textDiv = document.createElement("div");
-    textDiv.textContent = msg;
-    div.appendChild(textDiv);
+    div.textContent = msg;
     chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight; // 常にスクロール最下部
 }
 
-// Language selector: when changed, load translations and update static labels
-if (typeof i18n !== 'undefined') {
-    // Initialize language from localStorage or default to 'ja'
-    const saved = localStorage.getItem('lang') || 'ja';
-    i18n.load(saved).then(() => {
-        applyStaticTranslations();
-    });
+// ================================
+// 🎙️ STT（音声入力）モジュール
+// ================================
+const STT = {
+    recognition: null,
+    isListening: false,
+    onText: null,
+    onEnd: null,
 
-    if (langSelect) {
-        langSelect.value = saved;
-        langSelect.addEventListener('change', async (e) => {
-            const v = e.target.value;
-            await i18n.load(v);
-            localStorage.setItem('lang', v);
-            applyStaticTranslations();
-        });
+    init(lang) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            console.warn("ブラウザが音声認識に対応していません（Chrome推奨）");
+            return;
+        }
+
+        console.log("STT initialized with lang:", lang);
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = lang;
+        this.recognition.interimResults = true;
+        this.recognition.continuous = false;
+
+        this.recognition.onresult = (event) => {
+            const text = event.results[0][0].transcript;
+            if (this.onText) this.onText(text);
+        };
+
+        this.recognition.onend = () => {
+            this.isListening = false;
+            if (this.onEnd) this.onEnd();
+        };
+    },
+
+    start() { if (!this.recognition) return; this.isListening = true; this.recognition.start(); },
+    stop() { if (!this.recognition) return; this.recognition.stop(); this.isListening = false; }
+};
+
+// デフォルト日本語で初期化
+STT.init("ja-JP");
+
+// 音声認識結果を入力欄に反映
+STT.onText = (text) => { input.value = text; };
+
+// 音声認識終了時
+STT.onEnd = () => { micBtn.textContent = "🎤"; };
+
+// マイクボタンで STT 開始/停止
+micBtn.addEventListener("click", () => {
+    if (!STT.isListening) {
+        // 選択中の option の data-lang を取得
+        const selectedOption = langSelect.selectedOptions[0];
+        const langCode = selectedOption?.dataset.lang;
+        console.log("STT initialized with lang:", langCode);
+
+        // 古いインスタンス停止
+        if (STT.recognition) STT.stop();
+
+        STT.init(langCode);
+        STT.start();
+        micBtn.textContent = "🎙️ 受付中...";
+    } else {
+        STT.stop();
+        micBtn.textContent = "🎤";
     }
-}
+});
 
-function applyStaticTranslations() {
-    // data-i18n attributes
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        el.textContent = t(key);
-    });
-    // placeholders
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-        const key = el.getAttribute('data-i18n-placeholder');
-        el.setAttribute('placeholder', t(key));
-    });
-    // send button
-    if (sendBtn) sendBtn.textContent = t('send_button');
-}
+
+// 言語変更時にも STT 言語更新（マイク未押下時）
+langSelect.addEventListener("change", () => {
+    const selectedOption = langSelect.selectedOptions[0];
+    const langCode = selectedOption?.dataset.lang;
+    if (STT.recognition) STT.stop();
+    STT.init(langCode);
+    console.log("STT language set to:", langCode);
+    if (!STT.isListening) micBtn.textContent = "🎤";
+});
