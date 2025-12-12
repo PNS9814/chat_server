@@ -45,7 +45,9 @@ socket.on("chat_message", async (data) => {
     append(`🔵 翻訳中...`);
 
     try {
-        const res = await fetch(`${HOST}/api/translate`, {
+        const uri = `${HOST}/api/translate`;
+        console.log("Translating via:", uri);
+        const res = await fetch(uri, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, fromLang, toLang }),
