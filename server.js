@@ -14,6 +14,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const HOST = process.env.HOST || "localhost";
 const PORT = process.env.PORT || 3000;
+const TTS_PATH = process.env.TTS_PATH || "tts-cache/";
 
 let voiceId = "";
 
@@ -39,6 +40,9 @@ const langs = {
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+// public フォルダを公開
+app.use(express.static("public"));
 
 // ==============================
 // ✅ Gemini 設定
@@ -154,7 +158,7 @@ export async function aiTranslate(text, fromLang, toLang) {
 
     } catch (err) {
         console.error("[AI翻訳失敗]", err);
-        return null; // ← UI側で判定しやすい
+        return null;
     }
 }
 
@@ -162,24 +166,39 @@ export async function aiTranslate(text, fromLang, toLang) {
 // ElevenLabs TTS API
 // ==============================
 app.post("/api/tts", async (req, res) => {
-    const { text, lang, voiceId } = req.body;
+    const { text, lang } = req.body;
+    const voiceId = langs[lang]?.voice;
+
     if (!text || !lang || !voiceId) {
         return res.status(400).json({
             error: "text, lang, and voiceId are required.",
         });
     }
 
+    // --- 追加: ディレクトリの存在チェックと作成 ---
+    const localTTSPath = "./public/" + TTS_PATH;
+    if (!fs.existsSync(localTTSPath)) {
+        fs.mkdirSync(localTTSPath, { recursive: true });
+    }
+
     // ハッシュ生成（text+lang）
     const hash = crypto.createHash("md5").update(text + lang).digest("hex");
-    const filePath = path.join("tts-cache", `${hash}.mp3`);
+    const fileName = `${hash}.mp3`;
+    const localTTSFolder = "./public/" + TTS_PATH;
+    const localTTSFilePath = localTTSFolder + fileName;
+    const audioUrl = `http://${HOST}:${PORT}/${TTS_PATH}${fileName}`;
+    console.log("Audio URL:", audioUrl);
+    console.log("Local TTS Path:", localTTSFilePath);
 
     // ✅ もしファイルが存在したらキャッシュ返却
-    if (fs.existsSync(filePath)) {
-        console.log("🟠 Cache hit:", filePath);
+    if (fs.existsSync(localTTSFilePath)) {
+        console.log("🟠 Cache hit:", localTTSFilePath);
 
-        const data = fs.readFileSync(filePath);
-        res.setHeader("Content-Type", "audio/mpeg");
-        return res.send(data);
+        return res.json({
+            message: "TTS audio cached.",
+            audioUrl,
+            fileName,
+        });
     }
 
     console.log("🟢 Cache miss → ElevenLabs API");
@@ -209,9 +228,15 @@ app.post("/api/tts", async (req, res) => {
     const buffer = Buffer.from(arrayBuffer);
 
     // ✅ サーバーに保存（キャッシュ登録）
-    fs.writeFileSync(filePath, buffer);
+    fs.writeFileSync(localTTSFilePath, buffer);
+    console.log("✅ TTS audio saved:", localTTSFilePath, audioUrl);
 
     // レスポンス返却
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.send(buffer);
+    // res.setHeader("Content-Type", "audio/mpeg");
+    // res.send(buffer);
+    return res.json({
+        message: "TTS audio generated.",
+        audioUrl,
+        fileName,
+    });
 });
