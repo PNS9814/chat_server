@@ -10,6 +10,8 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
+const roomUsers = {};
+
 import { GoogleGenAI } from "@google/genai";
 
 const HOST = process.env.HOST || "localhost";
@@ -19,19 +21,19 @@ const TTS_PATH = process.env.TTS_PATH || "tts-cache/";
 let voiceId = "";
 
 const langs = {
-    'ja': { 'label': 'Japanese', 'voice': "bqpOyYNUu11tjjvRUbKn" },
+    'ja': { 'label': 'Japanese', 'voice': "DOL4zlUH4vnnX1hByxsw" },
     'en': { 'label': 'English', 'voice': "21m00Tcm4TlvDq8ikWAM" },
-    'es': { 'label': 'Spanish', 'voice': "" },
-    'de': { 'label': 'German', 'voice': "" },
+    'es': { 'label': 'Spanish', 'voice': "zl7szWVBXnpgrJmAalgz" },
+    'de': { 'label': 'German', 'voice': "Jvf6TAXwMUVTSR20U0f9" },
     'fr': { 'label': 'French', 'voice': "kwhMCf63M8O3rCfnQ3oQ" },
     'bn': { 'label': 'Bengali', 'voice': "WiaIVvI1gDL4vT4y7qUU" },
-    'zh': { 'label': 'Chinese', 'voice': "" },
-    'vi': { 'label': 'Vietnamese', 'voice': "" },
-    'si': { 'label': 'Sinhala', 'voice': "" },
+    'zh': { 'label': 'Chinese', 'voice': "z1etx2H6NQWq1LH6oqJA" },
+    'vi': { 'label': 'Vietnamese', 'voice': "VAzxBZgjAoy5WCeMEmFW" },
+    'si': { 'label': 'Sinhala', 'voice': "8FsOrsZSELg9otqX9nPu" },
     'id': { 'label': 'Bahasa Indonesia', 'voice': "4h05pJAlcSqTMs5KRd8X" },
-    'ne': { 'label': 'Nepali', 'voice': "" },
-    'mn': { 'label': 'Mongolian', 'voice': "" },
-    'my': { 'label': 'Burmese', 'voice': "" },
+    'ne': { 'label': 'Nepali', 'voice': "8FsOrsZSELg9otqX9nPu" },
+    'mn': { 'label': 'Mongolian', 'voice': "z1etx2H6NQWq1LH6oqJA" },
+    'my': { 'label': 'Burmese', 'voice': "8FsOrsZSELg9otqX9nPu" },
 };
 
 // ==============================
@@ -92,10 +94,23 @@ const io = new Server(httpServer, {
 io.on("connection", (socket) => {
     console.log("🟢 New connection:", socket.id);
 
-    socket.on("join_room", ({ roomId, userName }) => {
+    socket.on("join_room", ({ roomId, userName, userId }) => {
+        // --- ユーザーリストの更新 ---
+        if (!roomUsers[roomId]) {
+            roomUsers[roomId] = [];
+        }
+        // 重複防止（同じIDがあれば削除して追加）
+        roomUsers[roomId] = roomUsers[roomId].filter(u => u.id !== userId);
+        roomUsers[roomId].push({ id: userId, nickname: userName, socketId: socket.id });
+
+        console.log(roomUsers)
+
         console.log(`➡️ ${userName} joining room:`, roomId);
         socket.join(roomId);
         socket.name = userName;
+
+        // ルーム全員に最新のユーザーリストを送信
+        io.to(roomId).emit("user_list", roomUsers[roomId]);
 
         // 参加メッセージをルームに通知
         socket.to(roomId).emit("join_message", {
@@ -114,6 +129,11 @@ io.on("connection", (socket) => {
     });
 
     socket.on("disconnect", () => {
+        // --- ユーザーリストの更新 ---
+        for (const roomId in roomUsers) {
+            roomUsers[roomId] = roomUsers[roomId].filter(u => u.socketId !== socket.id);
+            io.to(roomId).emit("user_list", roomUsers[roomId]);
+        }
         console.log(`🔴 Disconnected: ${socket.name ?? socket.id}`);
     });
 });
