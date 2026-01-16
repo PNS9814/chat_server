@@ -206,7 +206,8 @@ app.post("/api/tts", async (req, res) => {
     const fileName = `${hash}.mp3`;
     const localTTSFolder = "./public/" + TTS_PATH;
     const localTTSFilePath = localTTSFolder + fileName;
-    const audioUrl = `http://${HOST}:${PORT}/${TTS_PATH}${fileName}`;
+    // const audioUrl = `http://${HOST}:${PORT}/${TTS_PATH}${fileName}`;
+    const audioUrl = `${TTS_BASE_URL}${fileName}`;
     console.log("Audio URL:", audioUrl);
     console.log("Local TTS Path:", localTTSFilePath);
 
