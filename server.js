@@ -17,6 +17,7 @@ import { GoogleGenAI } from "@google/genai";
 const HOST = process.env.HOST || "localhost";
 const PORT = process.env.PORT || 3000;
 const TTS_PATH = process.env.TTS_PATH || "tts-cache/";
+const TTS_BASE_URL = process.env.TTS_BASE_URL || `http://${HOST}:${PORT}/${TTS_PATH}`;
 
 let voiceId = "";
 
